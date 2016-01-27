@@ -1,0 +1,38 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+    <title>Spiv - the game</title>
+
+    <style>
+      body {
+        padding: 0px;
+        margin: 0px;
+        overflow: hidden;
+        background-color: black;
+      }
+      div#main-container {
+        padding: 10px;
+        margin: 10px;
+        background: white;
+      }
+      #main-canvas {
+        padding: 0px;
+        margin: 0px;
+      }
+    </style>
+
+    <script src="spiv.js"></script>
+    
+  </head> 
+  <body onload="start('main-canvas');">
+    <div id="main-container">
+      <canvas id="main-canvas" width="1600" height="500">
+        Your browser does not support the HTML5 Canvas feature. This
+        game uses new HTML5 features and will only work on the latest
+        versions of Firefox, Safari or Chrome (and maybe Internet
+        Explorer 9).
+      </canvas>
+    </div>
+  </body>
+</html>
