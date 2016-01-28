@@ -1,5 +1,6 @@
 var canvas;
 var ctx;
+var running;
 var grid;
 
 var WEST = 0x1;
@@ -29,6 +30,36 @@ Grid.prototype.eachCell = function(f) {
 	    f(r, c, cell);
 	}
     }
+}
+
+Grid.prototype.toLocation = function(row, column) {
+    var l = row * this.columns + column;
+    return l;
+}
+
+Grid.prototype.fromLocation = function(location) {
+    return [Math.floor(location / this.columns),
+            location % this.columns];
+}
+
+Grid.prototype.neighbours = function(location) {
+    var pos = this.fromLocation(location),
+        row = pos[0],
+        column = pos[1];
+    var ns = [];
+    if (row > 0 && (this.grid[row][column] & NORTH) == 0) {
+        ns.push(this.toLocation(row - 1, column));
+    }
+    if (row < this.rows - 1 && (this.grid[row][column] & SOUTH) == 0) {
+        ns.push(this.toLocation(row + 1, column));
+    }
+    if (column > 0 && (this.grid[row][column] & WEST) == 0) {
+        ns.push(this.toLocation(row, column - 1));
+    }
+    if (column < this.columns - 1 && (this.grid[row][column] & EAST) == 0) {
+        ns.push(this.toLocation(row, column + 1));
+    }
+    return ns;
 }
 
 Grid.prototype.link = function(row, column, direction) {
@@ -62,8 +93,13 @@ Grid.prototype.link = function(row, column, direction) {
 }
 
 Grid.prototype.render = function(ctx) {
-    var cellSize = 10;
+    var cellSize = 20;
     var r, c;
+    var maxDist = Math.floor(Math.sqrt(this.columns * this.rows));
+    for (var i in distances) {
+         maxDist = Math.max(maxDist, distances[i]);
+    }
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.save();
     ctx.translate(2, 2);
     for (r = 0; r < this.rows; r++) {
@@ -74,9 +110,23 @@ Grid.prototype.render = function(ctx) {
 		top = r * cellSize,
 		right = (c + 1) * cellSize,
 		bottom = (r + 1) * cellSize;
-	    // ctx.strokeStyle = 'rgba(0,0,0,0.1)';
-	    // ctx.strokeRect(left, top, cellSize, cellSize);
-	    // ctx.strokeStyle = 'black';
+            var loc = grid.toLocation(r, c)
+            if (loc == startLoc) {
+                ctx.fillStyle = 'blue';
+                ctx.fillRect(left + 2, top + 2, cellSize - 4, cellSize - 4);
+            } else if (loc == goalLoc) {
+                ctx.fillStyle = 'red';
+                ctx.fillRect(left + 2, top + 2, cellSize - 4, cellSize - 4);
+            } else if (loc in visited) {
+                var dist = distances[loc],
+                    ratio = 1 - dist / maxDist;
+
+                var red = Math.floor(255 * ratio),
+                    green = 127 + Math.floor(128 * ratio),
+                    blue = red;
+                ctx.fillStyle = 'rgb(' + red + ',' + green + ',' + blue + ')';
+                ctx.fillRect(left, top, cellSize, cellSize);
+            }
 	    if ((cell & NORTH) != 0) {
 	    	ctx.beginPath();
 	    	ctx.moveTo(c * cellSize, r * cellSize);
@@ -103,14 +153,135 @@ Grid.prototype.render = function(ctx) {
 	    }
 	}
     }
+    for (loc in frontier) {
+        var pos = grid.fromLocation(frontier[loc]),
+            r = pos[0],
+            c = pos[1];
+        ctx.fillStyle = 'lightblue';
+        ctx.fillRect(c * cellSize+1, r * cellSize+1,
+                     cellSize-2, cellSize-2);
+    }
+    if (goalReached) {
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = 2;
+        var curLoc = goalLoc,
+            curPos = grid.fromLocation(curLoc),
+            curR = curPos[0],
+            curC = curPos[1],
+            curDist = distances[curLoc];
+        ctx.beginPath();
+        ctx.moveTo(curC * cellSize + cellSize / 2,
+                   curR * cellSize + cellSize / 2);
+        while (distances[curLoc] > 0) {
+            var ns = grid.neighbours(curLoc);
+            for (var i in ns) {
+                if (distances[ns[i]] == curDist - 1) {
+                    curLoc = ns[i];
+                    curDist = distances[curLoc];
+                    break;
+                }
+            }
+            curPos = grid.fromLocation(curLoc),
+            curR = curPos[0],
+            curC = curPos[1];
+            ctx.lineTo(curC * cellSize + cellSize / 2,
+                       curR * cellSize + cellSize / 2);
+        }
+        ctx.stroke();
+    }
+
     ctx.restore();
 }
 
 function loop() {
-//    requestAnimationFrame(loop);
+    if (!running) {
+        return;
+    }
 
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    requestAnimationFrame(loop);
+
+    floodStep();
     grid.render(ctx);
+}
+
+var START = 0,
+    FLOOD = 1,
+    STOP = 2;
+var floodState = START;
+var floodSteps = 0;
+var visited = {}, frontier = [], distances = {};
+var startLoc = undefined;
+var goalLoc = undefined;
+var goalReached = false;
+
+function stopFlood() {
+    floodState = STOP;
+    floodSteps = 0;
+    visited = {};
+    frontier = [];
+    distances = {};
+    startLoc = undefined;
+    goalLoc = undefined;
+    goalReached = false;
+}
+
+function floodStep() {
+    if (floodState == START) {
+        console.log('flooding...');
+        startLoc = grid.toLocation(Math.floor(Math.random() * grid.rows), Math.floor(Math.random() * grid.columns));
+        goalLoc = grid.toLocation(Math.floor(Math.random() * grid.rows), Math.floor(Math.random() * grid.columns));
+        goalReached = false;
+        visited = {};
+        distances = {}
+        visited[startLoc] = true;
+        distances[startLoc] = 0;
+        frontier = [startLoc];
+        floodState = FLOOD;
+        floodSteps = 0;
+    } else if (floodState == FLOOD) {
+        if (frontier.length == 0 || floodSteps > 10000) {
+            console.log('flooding... done');
+            floodState = STOP;
+        } else {
+            floodSteps++;
+            var current = frontier.shift();
+            if (current == goalLoc) {
+                goalReached = true;
+                frontier = [];
+            } else {
+                var dist = distances[current];
+                var ns = grid.neighbours(current);
+                for (i = 0; i < ns.length; i++) {
+                    if (!(ns[i] in visited)) {
+                        frontier.push(ns[i]);
+                        visited[ns[i]] = true;
+                        distances[ns[i]] = dist + 1;
+                    }
+                }
+            }
+        }
+    } else if (floodState == STOP) {
+        floodState = START;
+        running = false;
+    }
+}
+
+function sideWinder(grid) {
+    var r, c;
+    for (r = grid.rows - 1; r >= 0; r--) {
+        c = 0;
+        startc = 0;
+        while (c < grid.columns) {
+            if (r > 0 && (c == grid.columns - 1 || Math.random() < 0.5)) {
+                var up = startc + Math.floor(Math.random() * (c - startc));
+                grid.link(r, up, NORTH);
+                startc = c + 1;
+            } else if (c < grid.columns - 1) {
+                grid.link(r, c, EAST);
+            }
+            c++;
+        }
+    }
 }
 
 function binaryTree(grid) {
@@ -134,13 +305,48 @@ function binaryTree(grid) {
     }
 }
 
+function generate(alg) {
+    grid = new Grid(20, 60);
+    switch (alg) {
+    case 'bintree':
+        binaryTree(grid);
+        break;
+    case 'sidewinder':
+        sideWinder(grid);
+        break;
+    default:
+        binaryTree(grid);
+        break;
+    }
+}
+
+function new_maze(alg) {
+    running = false;
+    stopFlood();
+    generate(alg);
+    grid.render(ctx);
+}
+
 function start(canvasId) {
     canvas = document.getElementById(canvasId);
     ctx = canvas.getContext('2d');
 
-    grid = new Grid(40, 140);
-    binaryTree(grid);
-    grid.link(grid.rows - 1, 0, WEST);
-    grid.link(0, grid.columns - 1, EAST);
+    generate('sidewinder');
+    grid.render(ctx);
+}
+
+function solve() {
+    stopFlood();
+    floodState = START;
+    running = true;
+    requestAnimationFrame(loop);
+}
+
+function pause() {
+    running = false;
+}
+
+function cont() {
+    running = true;
     requestAnimationFrame(loop);
 }
