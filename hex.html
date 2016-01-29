@@ -2,42 +2,39 @@
 <html>
   <head>
     <meta http-equiv="Content-type" content="text/html; charset=utf-8">
-    <title>Spiv - the game</title>
+    <title>Hex - the game</title>
 
     <style>
       body {
         padding: 0px;
         margin: 0px;
         overflow: hidden;
-        background-color: black;
+        background-color: lightgrey;
       }
       div#main-container {
+        display: inline-block;
         padding: 10px;
         margin: 10px;
         background: white;
       }
       #main-canvas {
         padding: 0px;
-        margin: 0px;
       }
     </style>
 
-    <script src="spiv.js"></script>
+    <script src="hex.js"></script>
 
   </head>
   <body onload="start('main-canvas');">
     <div id="main-container">
-      <canvas id="main-canvas" width="1600" height="500">
+      <div id="container">
+      <canvas id="main-canvas" width="1000" height="600">
         Your browser does not support the HTML5 Canvas feature. This
         game uses new HTML5 features and will only work on the latest
         versions of Firefox, Safari or Chrome (and maybe Internet
         Explorer 9).
       </canvas>
+      </div>
     </div>
-    <button onclick="new_maze('bintree')">New Maze (BinTree)</button>
-    <button onclick="new_maze('sidewinder')">New Maze (Sidewinder)</button>
-    <button onclick="solve()">Solve</button>
-    <button onclick="pause()">Pause</button>
-    <button onclick="cont()">Continue</button>
   </body>
 </html>
