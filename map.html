@@ -1,0 +1,51 @@
+<!DOCTYPE HTML>
+<html>
+  <head>
+    <meta http-equiv="Content-type" content="text/html; charset=utf-8">
+    <title>Map - the experiment</title>
+
+    <style>
+      body {
+        padding: 0px;
+        margin: 0px;
+        overflow: hidden;
+        background-color: lightgrey;
+      }
+      div#main-container {
+        padding: 0px;
+        margin: 0px;
+    /*    background: black;*/
+      }
+      #canvas1 {
+        padding: 0px;
+        margin: 0px;
+      }
+      #canvas2 {
+        padding: 0px;
+        margin: 0px;
+      }
+      }
+    </style>
+
+    <script src="map.js"></script>
+    <script src="perlin.js"></script>
+
+  </head>
+  <body onload="start('canvas1', 'canvas2');">
+    <div id="main-container">
+      <div id="container">
+      <canvas id="canvas1" width="256" height="256">
+        Your browser does not support the HTML5 Canvas feature. This
+        game uses new HTML5 features and will only work on the latest
+        versions of Firefox, Safari or Chrome (and maybe Internet
+        Explorer 9).
+      </canvas>
+      <canvas id="canvas2" width="256" height="256">
+        Your browser does not support the HTML5 Canvas feature. This
+        game uses new HTML5 features and will only work on the latest
+        versions of Firefox, Safari or Chrome (and maybe Internet
+        Explorer 9).
+      </canvas>
+     </div>
+  </body>
+</html>
