@@ -3,12 +3,13 @@
 var redraw = true;
 var showUnloadedBlocks = true;
 var showUnloadedTiles = true;
+var scale = 1;
 
 var globalSeedInt = 46;
 
 // Blocks are multiples of BLOCK_SIZE (around the origin of the X/Y
 // axes, double the size).
-var BLOCK_SIZE = 10;
+var BLOCK_SIZE = 8;
 
 // Object mapping block coordinates to blocks.
 var blockMap = {};
@@ -19,12 +20,51 @@ var blockCount = 0;
 // Number of currently allocated tiles.
 var tileCount = 0;
 
+function interFillBlock(block, x, y, size, random) {
+    if (size >= 1) {
+	var mid = Math.floor(size / 2);
+	block.grid[y + mid][x + mid].height = (block.grid[y][x].height +
+					       block.grid[y][x + size - 1].height +
+					       block.grid[y + size - 1][x].height +
+					       block.grid[y + size - 1][x + size - 1].height)/4 +
+	    (random() * 10 - 5);
+	var tile = block.grid[y + mid][x + mid];
+	var h = 50 + Math.floor(Math.max(0, Math.min(200, tile.height)));
+	tile.r = h;
+	tile.g = h;
+	tile.b = h;
+	tile.color = 'rgb(' + h + ',' + h + ',' + h + ')';
+	interFillBlock(block, x, y, mid, random);
+	interFillBlock(block, x + mid, y, mid, random);
+	interFillBlock(block, x, y + mid, mid, random);
+	interFillBlock(block, x + mid, y + mid, mid, random);
+    }
+}
+
+function fillBlock(block, x, y) {
+    var idx = (block.blockX * BLOCK_SIZE + x) * 100000 + (block.blockY * BLOCK_SIZE + y);
+    var random = makeRandom(idx);
+    block.grid[0][0].height = random() * 200;
+    block.grid[0][BLOCK_SIZE-1].height = random() * 200;
+    block.grid[BLOCK_SIZE - 1][0].height = random() * 200;
+    block.grid[BLOCK_SIZE - 1][BLOCK_SIZE - 1].height = random() * 200;
+    interFillBlock(block, 0, 0, BLOCK_SIZE, random);
+}
+
 // Create a new block.
 function makeBlock(blockX, blockY) {
     blockCount++;
     var block = {blockX: blockX,
 		 blockY: blockY,
 		 grid: {}};
+    // var x, y;
+    // for (y = 0; y < BLOCK_SIZE; y++) {
+    // 	block.grid[y] = {};
+    // 	for (x = 0; x < BLOCK_SIZE; x++) {
+    // 	    block.grid[y][x] = makeTile(blockX * BLOCK_SIZE + (blockX < 0 ? x + 1 : x), blockY * BLOCK_SIZE + (blockY < 0 ? y + 1 : y));
+    // 	}
+    // }
+    // fillBlock(block);
     return block;
 }
 
@@ -52,17 +92,88 @@ function blockLoaded(x, y) {
 // Create a new tile object.
 function makeTile(x, y) {
     tileCount++;
+
+    var hexSize2 = 16;
+    var hexA2 = hexSize2 / 2.0,
+	hexB2 = hexSize2 * Math.sqrt(3) / 2.0,
+	hexHeight2 = hexSize2 * 2.0,
+	hexWidth2 = hexB2 * 2.0;
+    var cx = x * hexWidth2 + y * hexB2,
+        cy = 3 * y * hexA2;
+
     var r = 100,
 	g = 200,
 	b = 200;
+    var random = makeRandom(x * 10000 + y);
+//    var col  = 'rgb(' + r + ',' + g + ',' + b + ')';
+
+    var frequenciesX = [0.1, 0.2, 0.4, 0.8, 0.16, 0.32];
+    var amplitudesX  = [0.6, 0.4, 0.7, 0.3,  0.2,  0.1];
+    var frequenciesY = [0.1, 0.2, 0.4, 0.8, 0.16, 0.32];
+    var amplitudesY  = [0.3, 0.8, 0.6, 0.5,  0.3,  0.2];
+    var sum = 0;
+    var i, j;
+    for (j = 0; j < frequenciesY.length; j++) {
+	for (i = 0; i < frequenciesX.length; i++) {
+	    sum += (Math.sin(cx/frequenciesX[i]) * amplitudesX[i] +
+	     Math.sin(cy/frequenciesY[j]) * amplitudesY[j]);
+	}
+    }
+    sum /= 2 * frequenciesY.length * frequenciesX.length;
+    
+    var height = Math.max(0, Math.min(1, (Math.sin(cx*hexWidth2) + Math.cos(cy*hexHeight2))/2));
+
+    sum= noiseAt(cx/40, cy/40);
+    var height = sum;
+    var h;
+    if (height > 0.6) { // snow
+	r = 255;
+	g = 255;
+	b = 255;
+    } else if (height > 0.5){ // rock
+	r = 150;
+	g = 150;
+	b = 150;
+    } else if (height > 0.45){ // dirt
+	r = 150;
+	g = 150;
+	b = 0;
+    } else if (height > 0.3){ // forest
+	r = 80;
+	g = 80;
+	b = 30;
+    } else if (height > 0.17){ // grass
+	r = 30;
+	g = 120;
+	b = 30;
+    } else if (height > 0.1){ // sand
+	r = 240;
+	g = 220;
+	b = 50;
+    } else if (height > -0.05){ // shallow water
+	r = 80;
+	g = 80;
+	b = 200;
+    } else if (height > -0.4){ // water
+	r = 50;
+	g = 50;
+	b = 170;
+    } else { // deep water
+	r = 30;
+	g = 30;
+	b = 120;
+    }
     var col  = 'rgb(' + r + ',' + g + ',' + b + ')';
     return {x: x,
 	    y: y,
+	    cx: cx,
+	    cy: cy,
 	    r: r,
 	    g: g,
 	    b: b,
 	    color: col,
-	    visited: false};
+	    height: 0,
+	    visited: true};
 }
 
 // Return the tile at x/y.  It is created and initialized if it was
@@ -127,13 +238,6 @@ var hexA = hexSize / 2.0,
     hexHeight = hexSize * 2.0,
     hexWidth = hexB * 2.0;
 
-function recalc() {
-    hexA = hexSize / 2.0;
-    hexB = hexSize * Math.sqrt(3) / 2.0;
-    hexHeight = hexSize * 2.0;
-    hexWidth = hexB * 2.0;
-}
-
 var panSpeed = 10;
 var DIR_W  = 0,
     DIR_E  = 1,
@@ -163,12 +267,11 @@ var input =
 
 var gameTicks = 0;
 
-// Map grid coordinates to screen coordinates of the hex center
-// (taking panning into account).
+// Map grid coordinates to screen coordinates of the hex center.
 function hexToScreenCoord(x, y) {
-    var cx = x * hexWidth + y * hexB,
-        cy = 3 * y * hexA;
-    return [cx + offsetX, cy + offsetY];
+    var cx = (x * hexWidth + y * hexB),
+        cy = (3 * y * hexA);
+    return [cx, cy];
 }
 
 // Calculate the Euclidean distance between two points.
@@ -178,16 +281,15 @@ function distance(x1, y1, x2, y2) {
     return Math.sqrt(dx * dx + dy * dy);
 }
 
-// Map screen coordinates to grid coordinates (taking panning into
-// account).
+// Map screen coordinates to grid coordinates.
 //
 // This is not the best (fast) approach: we first determine the grid
 // position of a target hex, then check if the screen coordinates is
 // closer to the origin of th two northern neighbours, correcting if
 // necessary.
 function screenToHexCoord(x, y) {
-    var j = Math.floor((y - offsetY + hexSize) / (3*hexHeight/4));
-    var i = Math.floor((x - offsetX - (j - 1) * hexB) / hexWidth);
+    var j = Math.floor(((y + hexSize) / (3*hexHeight/4)));
+    var i = Math.floor(((x - (j - 1) * hexB) / hexWidth));
 
     var nwx = i + DIR_OFS[DIR_NW][0],
 	nwy = j + DIR_OFS[DIR_NW][1],
@@ -224,12 +326,13 @@ function render(canvas) {
     ctx.textBaseline = 'middle';
     ctx.lineWidth = 1;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-//    ctx.strokeRect(1, 1, canvas.width-2, canvas.height-2);
+    ctx.translate(offsetX, offsetY);
+    ctx.scale(scale, scale);
 
     var strokeHexes = false,
 	fillHexes = true;
 
-    var mpos = screenToHexCoord(mouseX, mouseY);
+    var mpos = screenToHexCoord((mouseX - offsetX)/scale, (mouseY - offsetY)/scale);
     var mouseRow = mpos[1],
 	mouseCol = mpos[0];
     
@@ -237,18 +340,26 @@ function render(canvas) {
 
     ctx.strokeStyle = 'black';
 
-    var startPos = screenToHexCoord(frameX, frameY - hexA);
+    var startPos = screenToHexCoord((frameX - offsetX)/scale, (frameY - offsetY - hexA)/scale);
     var startCol = startPos[0],
 	startRow = startPos[1];
-    var endPos = screenToHexCoord(frameX + frameWidth + hexWidth/2, frameY - hexA);
+    var endPos = screenToHexCoord((frameX - offsetX + frameWidth + hexWidth/2)/scale, (frameY - offsetY - hexA)/scale);
     var endCol = endPos[0],
 	endRow = endPos[1];
-    var endPos2 = screenToHexCoord(frameX + frameWidth + hexWidth/2, frameY + frameHeight + hexA);
+    var endPos2 = screenToHexCoord((frameX - offsetX + frameWidth + hexWidth/2)/scale, (frameY - offsetY + frameHeight + hexA)/scale);
     var endCol2 = endPos2[0],
 	endRow2 = endPos2[1];
 
-    var scrX = offsetX,
-	scrY = offsetY;
+    var maxDrawX = 80,
+	maxDrawY = 40;
+    while (endRow2 - startRow > maxDrawY) {
+	startRow++;
+	endRow2--;
+    }
+    while (endCol - startCol > maxDrawX) {
+	startCol++;
+	endCol--;
+    }
     var xskip = 0;
     var rowCnt = 0;
     for (y = startRow; y <= endRow2; y++) {
@@ -263,16 +374,17 @@ function render(canvas) {
 	    var doFill = true;
 	    
 	    if (tileLoaded(x, y)) {
+		var tile = getTile(x, y);
 		if (x == playerPosX && y == playerPosY) {
 		    ctx.fillStyle = 'red';
 		} else {
-		    var tile = getTile(x, y);
 		    if (tile.visited){
 			ctx.fillStyle = tile.color;
 		    } else {
 			ctx.fillStyle = 'rgb(100,100,100)';
 		    }
 		}
+//		ctx.strokeText(tile.height + '', cx, cy);
 	    } else if (blockLoaded(x, y)) {
 		if (!showUnloadedTiles) {
 		    doFill = false;
@@ -335,7 +447,7 @@ function render(canvas) {
     ctx.fillRect(10, canvas.height - 60, 100, 58);
     ctx.strokeStyle = 'white';
     ctx.strokeText(mpos[0] + ',' + mpos[1], 20, canvas.height - 6);
-    ctx.strokeText('G: ' + goalSet, 20, canvas.height - 34);
+    ctx.strokeText('G: ' + goalSet + ', scale: ' + scale, 20, canvas.height - 34);
     ctx.strokeText('T: ' + tileCount + ', B: ' + blockCount, 20, canvas.height - 48);
 }
 
@@ -357,24 +469,22 @@ function update() {
 	redraw = true;
     }
     if (KEY_PLUS in input.keyDown) {
-	if (hexSize < 60) {
-	    offsetX = (offsetX - frameWidth/2)/ hexSize;
-	    offsetY = (offsetY - frameHeight/2)/ hexSize;
-	    hexSize += 1;
-	    recalc();
-	    offsetX = offsetX * hexSize + frameWidth/2;
-	    offsetY = offsetY * hexSize + frameHeight/2;
+	if (scale < 2) {
+	    offsetX = (offsetX - frameWidth/2)/ (scale*hexSize);
+	    offsetY = (offsetY - frameHeight/2)/ (scale*hexSize);
+	    scale *= 1.11;
+	    offsetX = offsetX * (scale*hexSize) + frameWidth/2;
+	    offsetY = offsetY * (scale*hexSize) + frameHeight/2;
 	    redraw = true;
 	}
     }
     if (KEY_MINUS in input.keyDown) {
-	if (hexSize > 10) {
-	    offsetX = (offsetX - frameWidth/2)/ hexSize;
-	    offsetY = (offsetY - frameHeight/2)/ hexSize;
-	    hexSize -= 1;
-	    recalc();
-	    offsetX = offsetX * hexSize + frameWidth/2;
-	    offsetY = offsetY * hexSize + frameHeight/2;
+	if (scale > 0.2) {
+	    offsetX = (offsetX - frameWidth/2)/ (scale*hexSize);
+	    offsetY = (offsetY - frameHeight/2)/ (scale*hexSize);
+	    scale /= 1.11;
+	    offsetX = offsetX * (scale*hexSize) + frameWidth/2;
+	    offsetY = offsetY * (scale*hexSize) + frameHeight/2;
 	    redraw = true;
 	}
     }
@@ -412,17 +522,38 @@ function update() {
 function loop(canvas) {
     requestAnimationFrame(function() {loop(canvas)});
     update();
-    if (redraw) {
+    if (redraw & gameTicks % 2 == 0) {
 	render(canvas);
 	redraw = false;
     }
 }
 
+// function noise(x, y) {
+//     var frequenciesX = [1/2, 1/4, 1/8, 1/16, 1/32, 1/64],
+// 	amplitudesX  = [0.2, 0, 0, 0.1, 0, 0.2];
+//     var frequenciesY = [1/2, 1/4, 1/8, 1/16, 1/32, 1/64],
+// 	amplitudesY  = [0.4, 0, 0.2, 0, 0.1, 0];
+//     var i, j;
+//     var sum;
+//     sum = 0;
+//     for (j in frequenciesY) {
+// 	for (i in frequenciesX) {
+// 	    sum += Math.sin(x / frequenciesX[i]) * amplitudesX[i] + Math.sin(y / frequenciesY[j]) * amplitudesY[j];
+// 	}
+//     }
+//     sum /= 8;
+//     return Math.max(0, Math.min(1, (sum + 1)));
+// }
+
+function noiseAt(x, y) {
+    return noise.perlin2(x/32, y/32);
+}
+
 function start(canvasId) {
     var canvas = document.getElementById(canvasId);
 
-    frameX = 0;//120;
-    frameY = 0;//60;
+    frameX = 120;
+    frameY = 60;
     offsetX = frameX;
     offsetY = frameY;
     function resize() {
@@ -434,8 +565,8 @@ function start(canvasId) {
     }
 
     resize();
-    offsetX = frameX + (frameWidth) / 2 - playerPosX * hexWidth;
-    offsetY = frameY + (frameHeight) / 2 - playerPosY * hexHeight;
+//    offsetX = frameX + (frameWidth) / 2 - playerPosX * hexWidth;
+//    offsetY = frameY + (frameHeight) / 2 - playerPosY * hexHeight;
     window.addEventListener("resize", resize);
     
     canvas.addEventListener("mousemove",
@@ -463,7 +594,7 @@ function start(canvasId) {
 			    });
 
     canvas.addEventListener("mouseup", function (e) {
-        var mpos = screenToHexCoord(e.clientX, e.clientY);
+        var mpos = screenToHexCoord((e.clientX - offsetX)/scale, (e.clientY - offsetY)/scale);
 	var mouseRow = mpos[1],
 	    mouseCol = mpos[0];
 	selHex = true;
@@ -472,154 +603,12 @@ function start(canvasId) {
 	redraw = true;
     });
 
-    getTile(playerPosX, playerPosY);
+    var i, j;
+    var deltaX = 80, deltaY = 40;
+    for (i = playerPosX - deltaX; i <= playerPosX + deltaX; i++) {
+	for (j = playerPosY - deltaY; j <= playerPosY + deltaY; j++) {
+	    getTile(i, j).visited = true;
+	}
+    }
     requestAnimationFrame(function() {loop(canvas)});
 }
-
-// A Javascript implementaion of Richard Brent's Xorgens xor4096 algorithm.
-//
-// This fast non-cryptographic random number generator is designed for
-// use in Monte-Carlo algorithms. It combines a long-period xorshift
-// generator with a Weyl generator, and it passes all common batteries
-// of stasticial tests for randomness while consuming only a few nanoseconds
-// for each prng generated.  For background on the generator, see Brent's
-// paper: "Some long-period random number generators using shifts and xors."
-// http://arxiv.org/pdf/1004.3115v1.pdf
-//
-// Usage:
-//
-// var xor4096 = require('xor4096');
-// random = xor4096(1);                        // Seed with int32 or string.
-// assert.equal(random(), 0.1520436450538547); // (0, 1) range, 53 bits.
-// assert.equal(random.int32(), 1806534897);   // signed int32, 32 bits.
-//
-// For nonzero numeric keys, this impelementation provides a sequence
-// identical to that by Brent's xorgens 3 implementaion in C.  This
-// implementation also provides for initalizing the generator with
-// string seeds, or for saving and restoring the state of the generator.
-//
-// On Chrome, this prng benchmarks about 2.1 times slower than
-// Javascript's built-in Math.random().
-
-(function(global, module, define) {
-
-function XorGen(seed) {
-  var me = this;
-
-  // Set up generator function.
-  me.next = function() {
-    var w = me.w,
-        X = me.X, i = me.i, t, v;
-    // Update Weyl generator.
-    me.w = w = (w + 0x61c88647) | 0;
-    // Update xor generator.
-    v = X[(i + 34) & 127];
-    t = X[i = ((i + 1) & 127)];
-    v ^= v << 13;
-    t ^= t << 17;
-    v ^= v >>> 15;
-    t ^= t >>> 12;
-    // Update Xor generator array state.
-    v = X[i] = v ^ t;
-    me.i = i;
-    // Result is the combination.
-    return (v + (w ^ (w >>> 16))) | 0;
-  };
-
-  function init(me, seed) {
-    var t, v, i, j, w, X = [], limit = 128;
-    if (seed === (seed | 0)) {
-      // Numeric seeds initialize v, which is used to generates X.
-      v = seed;
-      seed = null;
-    } else {
-      // String seeds are mixed into v and X one character at a time.
-      seed = seed + '\0';
-      v = 0;
-      limit = Math.max(limit, seed.length);
-    }
-    // Initialize circular array and weyl value.
-    for (i = 0, j = -32; j < limit; ++j) {
-      // Put the unicode characters into the array, and shuffle them.
-      if (seed) v ^= seed.charCodeAt((j + 32) % seed.length);
-      // After 32 shuffles, take v as the starting w value.
-      if (j === 0) w = v;
-      v ^= v << 10;
-      v ^= v >>> 15;
-      v ^= v << 4;
-      v ^= v >>> 13;
-      if (j >= 0) {
-        w = (w + 0x61c88647) | 0;     // Weyl.
-        t = (X[j & 127] ^= (v + w));  // Combine xor and weyl to init array.
-        i = (0 == t) ? i + 1 : 0;     // Count zeroes.
-      }
-    }
-    // We have detected all zeroes; make the key nonzero.
-    if (i >= 128) {
-      X[(seed && seed.length || 0) & 127] = -1;
-    }
-    // Run the generator 512 times to further mix the state before using it.
-    // Factoring this as a function slows the main generator, so it is just
-    // unrolled here.  The weyl generator is not advanced while warming up.
-    i = 127;
-    for (j = 4 * 128; j > 0; --j) {
-      v = X[(i + 34) & 127];
-      t = X[i = ((i + 1) & 127)];
-      v ^= v << 13;
-      t ^= t << 17;
-      v ^= v >>> 15;
-      t ^= t >>> 12;
-      X[i] = v ^ t;
-    }
-    // Storing state as object members is faster than using closure variables.
-    me.w = w;
-    me.X = X;
-    me.i = i;
-  }
-
-  init(me, seed);
-}
-
-function copy(f, t) {
-  t.i = f.i;
-  t.w = f.w;
-  t.X = f.X.slice();
-  return t;
-};
-
-function impl(seed, opts) {
-  if (seed == null) seed = +(new Date);
-  var xg = new XorGen(seed),
-      state = opts && opts.state,
-      prng = function() { return (xg.next() >>> 0) / 0x100000000; };
-  prng.double = function() {
-    do {
-      var top = xg.next() >>> 11,
-          bot = (xg.next() >>> 0) / 0x100000000,
-          result = (top + bot) / (1 << 21);
-    } while (result === 0);
-    return result;
-  };
-  prng.int32 = xg.next;
-  prng.quick = prng;
-  if (state) {
-    if (state.X) copy(state, xg);
-    prng.state = function() { return copy(xg, {}); }
-  }
-  return prng;
-}
-
-    window.xor4096 = impl;
-if (module && module.exports) {
-  module.exports = impl;
-} else if (define && define.amd) {
-  define(function() { return impl; });
-} else {
-  this.xor4096 = impl;
-}
-
-})(
-  this,                                     // window object or global
-  (typeof module) == 'object' && module,    // present in node.js
-  (typeof define) == 'function' && define   // present with an AMD loader
-);
