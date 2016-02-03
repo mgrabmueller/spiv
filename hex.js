@@ -1,11 +1,40 @@
+// hex.js - a simple hex-based 2d game engine with automatic world generation.
+//
+// Sources:
+// [1] Jamis Buck: Mazes for programmers, The Pragmatic Programmers, 2015.
+//
+// [2] Jason Bevins, Libnoise Tutorial 3: Generating and rendering a
+//     terrain height map, available from:
+//     http://libnoise.sourceforge.net/tutorials/tutorial3.html
+
 // When this is true, the screen is redrawn on the next animation
 // frame.
 var redraw = true;
 var showUnloadedBlocks = true;
 var showUnloadedTiles = true;
-var scale = 1;
+var scale = 0.5;
 
-var globalSeedInt = 46;
+var worldSeed = 46;
+
+var CHUNK_SIZE = 128;
+
+var chunkMap = {};
+var renderCanvas;
+var renderContext;
+
+function getChunk(x, y) {
+    var chunkX = Math.floor(x / CHUNK_SIZE) - (x < 0 ? 1 : 0),
+	chunkY = Math.floor(y / CHUNK_SIZE) - (y < 0 ? 1 : 0);
+    console.log(x, y, chunkX, chunkY);
+    if (!(chunkY in chunkMap)) {
+	chunkMap[chunkY] = {};
+    }
+    if (!(chunkX in chunkMap[chunkY])) {
+	renderChunk(renderCanvas, renderContext, chunkX, chunkY, CHUNK_SIZE, scale);
+	chunkMap[chunkY][chunkX] = renderContext.getImageData(0, 0, CHUNK_SIZE, CHUNK_SIZE);
+    }
+    return chunkMap[chunkY][chunkX];
+}
 
 // Blocks are multiples of BLOCK_SIZE (around the origin of the X/Y
 // axes, double the size).
@@ -19,6 +48,45 @@ var blockCount = 0;
 
 // Number of currently allocated tiles.
 var tileCount = 0;
+
+var oceanLevel = 0.0;
+
+var VERY_DRY = 0,
+    DRY = 1,
+    MODERATE = 2,
+    WET = 3,
+    VERY_WET = 4;
+
+var colors =
+    [
+	{low: -1.0000, r:   0, g:   0, b: 128}, 
+	{low: -0.2500, r:   0, g:   0, b: 255}, 
+	{low:  0.0000, r:   0, g: 128, b: 255}, 
+	{low:  0.0625, r: 240, g: 240, b:  64}, 
+	{low:  0.1250, r:  32, g: 160, b:   0}, 
+	{low:  0.3750, r: 224, g: 244, b:   0}, 
+	{low:  0.7500, r: 128, g: 128, b: 128}, 
+	{low:  0.8000, r: 240, g: 240, b: 240}, 
+	{low:  1.0000, r: 255, g: 255, b: 255}, 
+    ];
+
+function interpolateColor(value) {
+    var i;
+    var loIdx, hiIdx = colors.length - 1;
+    for (i in colors) {
+	if (value < colors[i].low) {
+	    hiIdx = i;
+	    break;
+	}
+	loIdx = i;
+    }
+    var t = ((value - colors[loIdx].low) / (colors[hiIdx].low - colors[loIdx].low))*4/5;
+    var r = Math.floor(t * (colors[hiIdx].r - colors[loIdx].r) + colors[loIdx].r),
+	g = Math.floor(t * (colors[hiIdx].g - colors[loIdx].g) + colors[loIdx].g),
+	b = Math.floor(t * (colors[hiIdx].b - colors[loIdx].b) + colors[loIdx].b);
+
+    return [r, g, b];
+}
 
 function interFillBlock(block, x, y, size, random) {
     if (size >= 1) {
@@ -57,14 +125,6 @@ function makeBlock(blockX, blockY) {
     var block = {blockX: blockX,
 		 blockY: blockY,
 		 grid: {}};
-    // var x, y;
-    // for (y = 0; y < BLOCK_SIZE; y++) {
-    // 	block.grid[y] = {};
-    // 	for (x = 0; x < BLOCK_SIZE; x++) {
-    // 	    block.grid[y][x] = makeTile(blockX * BLOCK_SIZE + (blockX < 0 ? x + 1 : x), blockY * BLOCK_SIZE + (blockY < 0 ? y + 1 : y));
-    // 	}
-    // }
-    // fillBlock(block);
     return block;
 }
 
@@ -101,68 +161,22 @@ function makeTile(x, y) {
     var cx = x * hexWidth2 + y * hexB2,
         cy = 3 * y * hexA2;
 
-    var r = 100,
-	g = 200,
-	b = 200;
-    var random = makeRandom(x * 10000 + y);
-//    var col  = 'rgb(' + r + ',' + g + ',' + b + ')';
-
-    var frequenciesX = [0.1, 0.2, 0.4, 0.8, 0.16, 0.32];
-    var amplitudesX  = [0.6, 0.4, 0.7, 0.3,  0.2,  0.1];
-    var frequenciesY = [0.1, 0.2, 0.4, 0.8, 0.16, 0.32];
-    var amplitudesY  = [0.3, 0.8, 0.6, 0.5,  0.3,  0.2];
-    var sum = 0;
-    var i, j;
-    for (j = 0; j < frequenciesY.length; j++) {
-	for (i = 0; i < frequenciesX.length; i++) {
-	    sum += (Math.sin(cx/frequenciesX[i]) * amplitudesX[i] +
-	     Math.sin(cy/frequenciesY[j]) * amplitudesY[j]);
-	}
+    var height = 0;
+	    
+    var c = 128;
+    while (c <= 1024) {
+	height += noise.simplex2(cx/c, cy/c);
+	height /= 2;
+	c *= 2;
     }
-    sum /= 2 * frequenciesY.length * frequenciesX.length;
-    
-    var height = Math.max(0, Math.min(1, (Math.sin(cx*hexWidth2) + Math.cos(cy*hexHeight2))/2));
+    height += 0.2;
+    height = Math.max(-1, Math.min(1, height));
 
-    sum= noiseAt(cx/40, cy/40);
-    var height = sum;
-    var h;
-    if (height > 0.6) { // snow
-	r = 255;
-	g = 255;
-	b = 255;
-    } else if (height > 0.5){ // rock
-	r = 150;
-	g = 150;
-	b = 150;
-    } else if (height > 0.45){ // dirt
-	r = 150;
-	g = 150;
-	b = 0;
-    } else if (height > 0.3){ // forest
-	r = 80;
-	g = 80;
-	b = 30;
-    } else if (height > 0.17){ // grass
-	r = 30;
-	g = 120;
-	b = 30;
-    } else if (height > 0.1){ // sand
-	r = 240;
-	g = 220;
-	b = 50;
-    } else if (height > -0.05){ // shallow water
-	r = 80;
-	g = 80;
-	b = 200;
-    } else if (height > -0.4){ // water
-	r = 50;
-	g = 50;
-	b = 170;
-    } else { // deep water
-	r = 30;
-	g = 30;
-	b = 120;
-    }
+    var color = interpolateColor(height),
+	r = color[0],
+	g = color[1],
+	b = color[2];
+
     var col  = 'rgb(' + r + ',' + g + ',' + b + ')';
     return {x: x,
 	    y: y,
@@ -318,137 +332,91 @@ function screenToHexCoord(x, y) {
     }
 }
 
-function render(canvas) {
-    var ctx = canvas.getContext('2d');
-
-    ctx.save();
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.lineWidth = 1;
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-    ctx.translate(offsetX, offsetY);
-    ctx.scale(scale, scale);
-
+function renderCell(canvas, ctx, x, y, mouseCol, mouseRow) {
     var strokeHexes = false,
 	fillHexes = true;
 
-    var mpos = screenToHexCoord((mouseX - offsetX)/scale, (mouseY - offsetY)/scale);
-    var mouseRow = mpos[1],
-	mouseCol = mpos[0];
+    var center = hexToScreenCoord(x, y);
+    var cx = center[0],
+	cy = center[1];
+    var doFill = true;
+	    
+    if (tileLoaded(x, y)) {
+	var tile = getTile(x, y);
+	if (tile.visited){
+	    ctx.fillStyle = tile.color;
+	} else {
+	    ctx.fillStyle = 'rgb(100,100,100)';
+	}
+    } else if (blockLoaded(x, y)) {
+	if (!showUnloadedTiles) {
+	    doFill = false;
+	}
+	ctx.fillStyle = 'rgb(10,10,10)';
+    } else {
+	if (!showUnloadedBlocks) {
+	    doFill = false;
+	}
+	ctx.fillStyle = 'black';
+    }
+    if (doFill && fillHexes) {
+	ctx.beginPath()
+	ctx.moveTo(cx - hexB, cy - hexA);
+	ctx.lineTo(cx, cy - hexSize);
+	ctx.lineTo(cx + hexB, cy - hexA);
+	ctx.lineTo(cx + hexB, cy + hexA);
+	ctx.lineTo(cx, cy + hexSize);
+	ctx.lineTo(cx - hexB, cy + hexA);
+	ctx.lineTo(cx - hexB, cy - hexA);
+	ctx.fill();
+    }
     
-    var x, y;
+    if (doFill && strokeHexes) {
+	ctx.beginPath()
+	ctx.strokeStyle = 'white';
+	ctx.moveTo(cx - hexB, cy - hexA);
+	ctx.lineTo(cx, cy - hexSize);
+	ctx.lineTo(cx + hexB, cy - hexA);
+	ctx.lineTo(cx + hexB, cy + hexA);
+	ctx.lineTo(cx, cy + hexSize);
+	ctx.lineTo(cx - hexB, cy + hexA);
+	ctx.lineTo(cx - hexB, cy - hexA);
+	ctx.stroke();
+    }
+}
 
-    ctx.strokeStyle = 'black';
+// Render the map at chunk position `chunkX'/`chunkY' (which is a
+// square of chunkSize) onto the given `canvas' (which must hold at
+// least `chunkSize'*`chunkSize' pixels).  The map is scaled by the
+// factor `scale'.
+function renderChunk(canvas, ctx, chunkX, chunkY, chunkSize, scale) {
+    ctx.save();
+    ctx.translate(-chunkX * chunkSize, -chunkY * chunkSize);
+    ctx.scale(scale, scale);
 
-    var startPos = screenToHexCoord((frameX - offsetX)/scale, (frameY - offsetY - hexA)/scale);
+    ctx.clearRect(0, 0, chunkSize, chunkSize);
+
+    var startPos = screenToHexCoord((chunkX * chunkSize) / scale, (chunkY * chunkSize - hexA) / scale);
     var startCol = startPos[0],
 	startRow = startPos[1];
-    var endPos = screenToHexCoord((frameX - offsetX + frameWidth + hexWidth/2)/scale, (frameY - offsetY - hexA)/scale);
-    var endCol = endPos[0],
-	endRow = endPos[1];
-    var endPos2 = screenToHexCoord((frameX - offsetX + frameWidth + hexWidth/2)/scale, (frameY - offsetY + frameHeight + hexA)/scale);
-    var endCol2 = endPos2[0],
-	endRow2 = endPos2[1];
+    var endPos1 = screenToHexCoord(((chunkX+1) * chunkSize + hexWidth/2) / scale, (chunkY * chunkSize - hexA) / scale);
+    var endCol = endPos1[0];
+    var endPos2 = screenToHexCoord(((chunkX+1) * chunkSize + hexWidth/2) / scale, ((chunkY+1)*chunkSize + hexA) / scale);
+    var endRow = endPos2[1];
 
-    var maxDrawX = 80,
-	maxDrawY = 40;
-    while (endRow2 - startRow > maxDrawY) {
-	startRow++;
-	endRow2--;
-    }
-    while (endCol - startCol > maxDrawX) {
-	startCol++;
-	endCol--;
-    }
     var xskip = 0;
     var rowCnt = 0;
-    for (y = startRow; y <= endRow2; y++) {
+    var x, y;
+    for (y = startRow; y <= endRow; y++) {
 	if ((rowCnt & 1) == 1) {
 	    xskip++;
 	}
 	rowCnt++;
         for (x = startCol - xskip; x <= endCol - xskip; x++) {
-	    var center = hexToScreenCoord(x, y);
-	    var cx = center[0],
-		cy = center[1];
-	    var doFill = true;
-	    
-	    if (tileLoaded(x, y)) {
-		var tile = getTile(x, y);
-		if (x == playerPosX && y == playerPosY) {
-		    ctx.fillStyle = 'red';
-		} else {
-		    if (tile.visited){
-			ctx.fillStyle = tile.color;
-		    } else {
-			ctx.fillStyle = 'rgb(100,100,100)';
-		    }
-		}
-//		ctx.strokeText(tile.height + '', cx, cy);
-	    } else if (blockLoaded(x, y)) {
-		if (!showUnloadedTiles) {
-		    doFill = false;
-		}
-		ctx.fillStyle = 'rgb(10,10,10)';
-	    } else {
-		if (!showUnloadedBlocks) {
-		    doFill = false;
-		}
-		ctx.fillStyle = 'black';
-	    }
-	    if (doFill && fillHexes) {
-		ctx.beginPath()
-		ctx.moveTo(cx - hexB, cy - hexA);
-		ctx.lineTo(cx, cy - hexSize);
-		ctx.lineTo(cx + hexB, cy - hexA);
-		ctx.lineTo(cx + hexB, cy + hexA);
-		ctx.lineTo(cx, cy + hexSize);
-		ctx.lineTo(cx - hexB, cy + hexA);
-		ctx.lineTo(cx - hexB, cy - hexA);
-		ctx.fill();
-	    }
-
-	    if (doFill && strokeHexes) {
-		ctx.beginPath()
-		ctx.strokeStyle = 'white';
-		ctx.moveTo(cx - hexB, cy - hexA);
-		ctx.lineTo(cx, cy - hexSize);
-		ctx.lineTo(cx + hexB, cy - hexA);
-		ctx.lineTo(cx + hexB, cy + hexA);
-		ctx.lineTo(cx, cy + hexSize);
-		ctx.lineTo(cx - hexB, cy + hexA);
-		ctx.lineTo(cx - hexB, cy - hexA);
-		ctx.stroke();
-	    }
-//            ctx.strokeText(x + ',' + y, cx, cy);
-	    if (x == mouseCol && y == mouseRow) {
-		ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
-		ctx.beginPath()
-		ctx.moveTo(cx - hexB, cy - hexA);
-		ctx.lineTo(cx, cy - hexSize);
-		ctx.lineTo(cx + hexB, cy - hexA);
-		ctx.lineTo(cx + hexB, cy + hexA);
-		ctx.lineTo(cx, cy + hexSize);
-		ctx.lineTo(cx - hexB, cy + hexA);
-		ctx.lineTo(cx - hexB, cy - hexA);
-		ctx.fill();
-	    }
-        }
+	    renderCell(canvas, ctx, x, y, -1, -1);
+	}
     }
     ctx.restore();
-
-    if (frameX > 0) {
-	ctx.strokeStyle = 'white';
-	ctx.strokeRect(frameX, frameY, frameWidth, frameHeight);
-    }
-
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    ctx.fillRect(10, canvas.height - 60, 100, 58);
-    ctx.strokeStyle = 'white';
-    ctx.strokeText(mpos[0] + ',' + mpos[1], 20, canvas.height - 6);
-    ctx.strokeText('G: ' + goalSet + ', scale: ' + scale, 20, canvas.height - 34);
-    ctx.strokeText('T: ' + tileCount + ', B: ' + blockCount, 20, canvas.height - 48);
 }
 
 function update() {
@@ -519,41 +487,39 @@ function update() {
     gameTicks++;
 }
 
+function render(canvas) {
+    var ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var x, y;
+    for (y = -offsetY; y < -offsetY + canvas.height; y += CHUNK_SIZE) {
+	for (x = -offsetX; x < -offsetX + canvas.width; x += CHUNK_SIZE) {
+	    var chunk = getChunk(x, y);
+	    ctx.putImageData(chunk, x - offsetX, y - offsetY);
+	}
+    }
+}
+
 function loop(canvas) {
     requestAnimationFrame(function() {loop(canvas)});
     update();
-    if (redraw & gameTicks % 2 == 0) {
+    if (redraw) {
 	render(canvas);
 	redraw = false;
     }
 }
 
-// function noise(x, y) {
-//     var frequenciesX = [1/2, 1/4, 1/8, 1/16, 1/32, 1/64],
-// 	amplitudesX  = [0.2, 0, 0, 0.1, 0, 0.2];
-//     var frequenciesY = [1/2, 1/4, 1/8, 1/16, 1/32, 1/64],
-// 	amplitudesY  = [0.4, 0, 0.2, 0, 0.1, 0];
-//     var i, j;
-//     var sum;
-//     sum = 0;
-//     for (j in frequenciesY) {
-// 	for (i in frequenciesX) {
-// 	    sum += Math.sin(x / frequenciesX[i]) * amplitudesX[i] + Math.sin(y / frequenciesY[j]) * amplitudesY[j];
-// 	}
-//     }
-//     sum /= 8;
-//     return Math.max(0, Math.min(1, (sum + 1)));
-// }
-
-function noiseAt(x, y) {
-    return noise.perlin2(x/32, y/32);
-}
-
 function start(canvasId) {
+    renderCanvas = document.createElement('canvas');
+    renderCanvas.width = CHUNK_SIZE;
+    renderCanvas.height = CHUNK_SIZE;
+    renderContext = renderCanvas.getContext('2d');
+
     var canvas = document.getElementById(canvasId);
 
-    frameX = 120;
-    frameY = 60;
+    noise.seed(worldSeed);
+
+    frameX = 0;//120;
+    frameY = 0;//60;
     offsetX = frameX;
     offsetY = frameY;
     function resize() {
@@ -564,10 +530,8 @@ function start(canvasId) {
 	redraw = true;
     }
 
-    resize();
-//    offsetX = frameX + (frameWidth) / 2 - playerPosX * hexWidth;
-//    offsetY = frameY + (frameHeight) / 2 - playerPosY * hexHeight;
-    window.addEventListener("resize", resize);
+//    resize();
+//    window.addEventListener("resize", resize);
     
     canvas.addEventListener("mousemove",
 			      function(e) {
@@ -610,5 +574,7 @@ function start(canvasId) {
 	    getTile(i, j).visited = true;
 	}
     }
+//    render(canvas);
+
     requestAnimationFrame(function() {loop(canvas)});
 }
