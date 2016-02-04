@@ -491,10 +491,10 @@ function render(canvas) {
     var ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     var x, y;
-    for (y = -offsetY; y < -offsetY + canvas.height; y += CHUNK_SIZE) {
-	for (x = -offsetX; x < -offsetX + canvas.width; x += CHUNK_SIZE) {
-	    var chunk = getChunk(x, y);
-	    ctx.putImageData(chunk, x - offsetX, y - offsetY);
+    for (y = 0; y < canvas.height; y += CHUNK_SIZE) {
+	for (x = 0; x < canvas.width; x += CHUNK_SIZE) {
+	    var chunk = getChunk(x + offsetX, y + offsetY);
+	    ctx.putImageData(chunk, x - offsetX % CHUNK_SIZE, y - offsetY % CHUNK_SIZE);
 	}
     }
 }
