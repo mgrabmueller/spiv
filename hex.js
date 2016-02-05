@@ -12,17 +12,20 @@
 var redraw = true;
 var showUnloadedBlocks = true;
 var showUnloadedTiles = true;
-var scaleTable = [0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2.2, 2.4];
-var scaleIndex = 5;
+var scaleTable = [0.2, 0.3, 0.4, 0.5, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2.2, 2.4];
+var scaleIndex = 2;
 var scale = scaleTable[scaleIndex];
+
+var debug = false;
 
 var worldSeed = 46;
 
-var CHUNK_SIZE = 128*2;
+var CHUNK_SIZE = 128;
 
 var chunkMap = {};
 var renderCanvas;
 var renderContext;
+var chunkCount = 0;
 
 function getChunk(x, y) {
     var chunkX = Math.floor(x / CHUNK_SIZE),
@@ -35,6 +38,7 @@ function getChunk(x, y) {
 	chunkMap[chunkY][chunkX] = {imageData: renderContext.getImageData(0, 0, CHUNK_SIZE, CHUNK_SIZE),
                                     chunkX: chunkX,
                                     chunkY: chunkY};
+        chunkCount++;
     }
     return chunkMap[chunkY][chunkX];
 }
@@ -420,8 +424,10 @@ function renderChunk(canvas, ctx, chunkX, chunkY, chunkSize, scale) {
 	}
     }
     ctx.restore();
-    ctx.strokeStyle = 'black';
-    ctx.strokeRect(0, 0, chunkSize, chunkSize);
+    if (debug) {
+        ctx.strokeStyle = 'black';
+        ctx.strokeRect(0, 0, chunkSize, chunkSize);
+    }
 }
 
 function update() {
@@ -450,6 +456,7 @@ function update() {
 	    offsetX = offsetX * (scale*hexSize) + frameWidth/2;
 	    offsetY = offsetY * (scale*hexSize) + frameHeight/2;
             chunkMap = [];
+            chunkCount = 0;
 	    redraw = true;
 	}
     }
@@ -463,6 +470,7 @@ function update() {
 	    offsetX = offsetX * (scale*hexSize) + frameWidth/2;
 	    offsetY = offsetY * (scale*hexSize) + frameHeight/2;
             chunkMap = [];
+            chunkCount = 0;
 	    redraw = true;
 	}
     }
@@ -510,6 +518,14 @@ function render(canvas) {
                              chunk.chunkY * CHUNK_SIZE + offsetY);
 	}
     }
+
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.strokeStyle = 'white';
+    var boxHeight = 50,
+        boxWidth = 150;
+    ctx.fillRect(10, canvas.height - 10 - boxHeight, boxWidth, boxHeight);
+    ctx.strokeRect(10, canvas.height - 10 - boxHeight, boxWidth, boxHeight);
+    ctx.strokeText('T: ' + tileCount + ', B: ' + blockCount + ', C:' + chunkCount, 14, canvas.height - 10 - boxHeight + 14);
 }
 
 function loop(canvas) {
@@ -557,17 +573,21 @@ function start(canvasId) {
     document.addEventListener("keydown",
 			    function(e) {
 				input.keyDown[e.which] = true;
-				switch (e.which) {
-				case 0:
-				    break;
-				default:
-				    console.log("key down:", e.which);
-				    break
-				}
+				console.log("key down:", e.which);
 			    });
     document.addEventListener("keyup",
 			    function(e) {
 				delete input.keyDown[e.which];
+				switch (e.which) {
+				case 68:
+                                    debug = !debug;
+                                    chunkMap = [];
+                                    chunkCount = 0;
+                                    redraw = true;
+				    break;
+				default:
+				    break
+				}
 			    });
 
     canvas.addEventListener("mouseup", function (e) {
