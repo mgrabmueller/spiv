@@ -12,26 +12,29 @@
 var redraw = true;
 var showUnloadedBlocks = true;
 var showUnloadedTiles = true;
-var scale = 0.5;
+var scaleTable = [0.2, 0.4, 0.6, 0.8, 1, 1.2, 1.4, 1.6, 1.8, 2.2, 2.4];
+var scaleIndex = 5;
+var scale = scaleTable[scaleIndex];
 
 var worldSeed = 46;
 
-var CHUNK_SIZE = 128;
+var CHUNK_SIZE = 128*2;
 
 var chunkMap = {};
 var renderCanvas;
 var renderContext;
 
 function getChunk(x, y) {
-    var chunkX = Math.floor(x / CHUNK_SIZE) - (x < 0 ? 1 : 0),
-	chunkY = Math.floor(y / CHUNK_SIZE) - (y < 0 ? 1 : 0);
-    console.log(x, y, chunkX, chunkY);
+    var chunkX = Math.floor(x / CHUNK_SIZE),
+	chunkY = Math.floor(y / CHUNK_SIZE);
     if (!(chunkY in chunkMap)) {
 	chunkMap[chunkY] = {};
     }
     if (!(chunkX in chunkMap[chunkY])) {
 	renderChunk(renderCanvas, renderContext, chunkX, chunkY, CHUNK_SIZE, scale);
-	chunkMap[chunkY][chunkX] = renderContext.getImageData(0, 0, CHUNK_SIZE, CHUNK_SIZE);
+	chunkMap[chunkY][chunkX] = {imageData: renderContext.getImageData(0, 0, CHUNK_SIZE, CHUNK_SIZE),
+                                    chunkX: chunkX,
+                                    chunkY: chunkY};
     }
     return chunkMap[chunkY][chunkX];
 }
@@ -352,7 +355,7 @@ function renderCell(canvas, ctx, x, y, mouseCol, mouseRow) {
 	if (!showUnloadedTiles) {
 	    doFill = false;
 	}
-	ctx.fillStyle = 'rgb(10,10,10)';
+	ctx.fillStyle = 'rgb(30,30,30)';
     } else {
 	if (!showUnloadedBlocks) {
 	    doFill = false;
@@ -391,10 +394,10 @@ function renderCell(canvas, ctx, x, y, mouseCol, mouseRow) {
 // factor `scale'.
 function renderChunk(canvas, ctx, chunkX, chunkY, chunkSize, scale) {
     ctx.save();
-    ctx.translate(-chunkX * chunkSize, -chunkY * chunkSize);
-    ctx.scale(scale, scale);
-
     ctx.clearRect(0, 0, chunkSize, chunkSize);
+    ctx.translate(-chunkX * chunkSize, -chunkY * chunkSize);
+
+    ctx.scale(scale, scale);
 
     var startPos = screenToHexCoord((chunkX * chunkSize) / scale, (chunkY * chunkSize - hexA) / scale);
     var startCol = startPos[0],
@@ -409,14 +412,16 @@ function renderChunk(canvas, ctx, chunkX, chunkY, chunkSize, scale) {
     var x, y;
     for (y = startRow; y <= endRow; y++) {
 	if ((rowCnt & 1) == 1) {
-	    xskip++;
+	    xskip += 1;
 	}
 	rowCnt++;
-        for (x = startCol - xskip; x <= endCol - xskip; x++) {
+        for (x = startCol - xskip; x <= endCol - xskip+2; x++) {
 	    renderCell(canvas, ctx, x, y, -1, -1);
 	}
     }
     ctx.restore();
+    ctx.strokeStyle = 'black';
+    ctx.strokeRect(0, 0, chunkSize, chunkSize);
 }
 
 function update() {
@@ -437,22 +442,27 @@ function update() {
 	redraw = true;
     }
     if (KEY_PLUS in input.keyDown) {
-	if (scale < 2) {
+	if (scaleIndex < scaleTable.length-1) {
 	    offsetX = (offsetX - frameWidth/2)/ (scale*hexSize);
 	    offsetY = (offsetY - frameHeight/2)/ (scale*hexSize);
-	    scale *= 1.11;
+            scaleIndex++;
+            scale = scaleTable[scaleIndex];
 	    offsetX = offsetX * (scale*hexSize) + frameWidth/2;
 	    offsetY = offsetY * (scale*hexSize) + frameHeight/2;
+            chunkMap = [];
 	    redraw = true;
 	}
     }
     if (KEY_MINUS in input.keyDown) {
-	if (scale > 0.2) {
+	if (scaleIndex > 0) {
 	    offsetX = (offsetX - frameWidth/2)/ (scale*hexSize);
 	    offsetY = (offsetY - frameHeight/2)/ (scale*hexSize);
 	    scale /= 1.11;
+            scaleIndex--;
+            scale = scaleTable[scaleIndex];
 	    offsetX = offsetX * (scale*hexSize) + frameWidth/2;
 	    offsetY = offsetY * (scale*hexSize) + frameHeight/2;
+            chunkMap = [];
 	    redraw = true;
 	}
     }
@@ -491,10 +501,13 @@ function render(canvas) {
     var ctx = canvas.getContext('2d');
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     var x, y;
-    for (y = 0; y < canvas.height; y += CHUNK_SIZE) {
-	for (x = 0; x < canvas.width; x += CHUNK_SIZE) {
-	    var chunk = getChunk(x + offsetX, y + offsetY);
-	    ctx.putImageData(chunk, x - offsetX % CHUNK_SIZE, y - offsetY % CHUNK_SIZE);
+    ctx.strokeStyle = 'black';
+    for (y = 0; y < canvas.height + CHUNK_SIZE; y += CHUNK_SIZE) {
+	for (x = 0; x < canvas.width + CHUNK_SIZE; x += CHUNK_SIZE) {
+	    var chunk = getChunk(x - offsetX, y - offsetY);
+	    ctx.putImageData(chunk.imageData,
+                             chunk.chunkX * CHUNK_SIZE + offsetX,
+                             chunk.chunkY * CHUNK_SIZE + offsetY);
 	}
     }
 }
@@ -530,8 +543,8 @@ function start(canvasId) {
 	redraw = true;
     }
 
-//    resize();
-//    window.addEventListener("resize", resize);
+    resize();
+    window.addEventListener("resize", resize);
 
     canvas.addEventListener("mousemove",
 			      function(e) {
@@ -568,13 +581,12 @@ function start(canvasId) {
     });
 
     var i, j;
-    var deltaX = 80, deltaY = 40;
+    var deltaX = 40, deltaY = 20;
     for (i = playerPosX - deltaX; i <= playerPosX + deltaX; i++) {
 	for (j = playerPosY - deltaY; j <= playerPosY + deltaY; j++) {
 	    getTile(i, j).visited = true;
 	}
     }
-//    render(canvas);
 
     requestAnimationFrame(function() {loop(canvas)});
 }
