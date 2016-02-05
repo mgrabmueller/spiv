@@ -59,15 +59,15 @@ var VERY_DRY = 0,
 
 var colors =
     [
-	{low: -1.0000, r:   0, g:   0, b: 128}, 
-	{low: -0.2500, r:   0, g:   0, b: 255}, 
-	{low:  0.0000, r:   0, g: 128, b: 255}, 
-	{low:  0.0625, r: 240, g: 240, b:  64}, 
-	{low:  0.1250, r:  32, g: 160, b:   0}, 
-	{low:  0.3750, r: 224, g: 244, b:   0}, 
-	{low:  0.7500, r: 128, g: 128, b: 128}, 
-	{low:  0.8000, r: 240, g: 240, b: 240}, 
-	{low:  1.0000, r: 255, g: 255, b: 255}, 
+	{low: -1.0000, r:   0, g:   0, b: 128},
+	{low: -0.2500, r:   0, g:   0, b: 255},
+	{low:  0.0000, r:   0, g: 128, b: 255},
+	{low:  0.0625, r: 240, g: 240, b:  64},
+	{low:  0.1250, r:  32, g: 160, b:   0},
+	{low:  0.3750, r: 224, g: 244, b:   0},
+	{low:  0.7500, r: 128, g: 128, b: 128},
+	{low:  0.8000, r: 240, g: 240, b: 240},
+	{low:  1.0000, r: 255, g: 255, b: 255},
     ];
 
 function interpolateColor(value) {
@@ -162,7 +162,7 @@ function makeTile(x, y) {
         cy = 3 * y * hexA2;
 
     var height = 0;
-	    
+
     var c = 128;
     while (c <= 1024) {
 	height += noise.simplex2(cx/c, cy/c);
@@ -340,7 +340,7 @@ function renderCell(canvas, ctx, x, y, mouseCol, mouseRow) {
     var cx = center[0],
 	cy = center[1];
     var doFill = true;
-	    
+
     if (tileLoaded(x, y)) {
 	var tile = getTile(x, y);
 	if (tile.visited){
@@ -370,7 +370,7 @@ function renderCell(canvas, ctx, x, y, mouseCol, mouseRow) {
 	ctx.lineTo(cx - hexB, cy - hexA);
 	ctx.fill();
     }
-    
+
     if (doFill && strokeHexes) {
 	ctx.beginPath()
 	ctx.strokeStyle = 'white';
@@ -483,7 +483,7 @@ function update() {
 	tile.visited = true;
 	redraw = true;
     }
-	    
+
     gameTicks++;
 }
 
@@ -532,7 +532,7 @@ function start(canvasId) {
 
 //    resize();
 //    window.addEventListener("resize", resize);
-    
+
     canvas.addEventListener("mousemove",
 			      function(e) {
 				  var x = e.clientX,
