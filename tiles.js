@@ -2,11 +2,13 @@
 
 var tiles = {
     ticks: 0,
-    tileSize: 128,
-    renderedCount: 0,
+    offsetX: 0,
+    offsetY: 0,
+    tileSize: 64,
     renderCanvas: null,
     renderCtx: null,
-    tiles: []
+    tileMap: [],
+    rendering: false
 };
 
 var colors =
@@ -32,7 +34,7 @@ function interpolateColor(value, x, y) {
 	}
 	loIdx = i;
     }
-    var t = ((value - colors[loIdx].low) / (colors[hiIdx].low - colors[loIdx].low));//*4/5;
+    var t = ((value - colors[loIdx].low) / (colors[hiIdx].low - colors[loIdx].low))*4/5;
     var r = Math.floor(t * (colors[hiIdx].r - colors[loIdx].r) + colors[loIdx].r),
 	g = Math.floor(t * (colors[hiIdx].g - colors[loIdx].g) + colors[loIdx].g),
 	b = Math.floor(t * (colors[hiIdx].b - colors[loIdx].b) + colors[loIdx].b);
@@ -64,7 +66,6 @@ function genHeightmap(tileX, tileY) {
 }
 
 function renderTile(heightMap, doColor, lighting) {
-    console.log("rendering");
     var ctx = tiles.renderCtx;
     var x, y;
     var shadowVal = 30;
@@ -103,32 +104,35 @@ function renderTile(heightMap, doColor, lighting) {
     }
 }
 
-function update() {
-    var data,
-        tile,
-        canvas,
-        ctx,
-        x, y;
-    tiles.ticks++;
-    if (tiles.ticks % 10 == 0 && tiles.renderedCount < tiles.tiles.length) {
-        tile = tiles.tiles[tiles.renderedCount];
+function getTile(tileX, tileY) {
+    tiles.tileMap[tileY] = tiles.tileMap[tileY] || [];
 
-        var cnt = (tiles.canvas.width / tiles.tileSize) | 0;
-        tile.tileX = tiles.renderedCount % cnt;
-        tile.tileY = (tiles.renderedCount / cnt) | 0;
-
-        canvas = tiles.renderCanvas,
-        ctx = tiles.renderCtx;
-        ctx.clearRect(0, 0, tiles.tileSize, tiles.tileSize);
-
-        var heightMap = genHeightmap(tile.tileX, tile.tileY);
-        renderTile(heightMap, true, true);
-
-        data = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        tile.imageData = data;
-        tile.rendered = true;
-        tiles.renderedCount++;
+    if (!(tileX in tiles.tileMap[tileY])) {
+	if (!tiles.rendering) {
+	    tiles.rendering = true;
+	    var promise = new Promise(function(resolve, _reject) {
+		var canvas = tiles.renderCanvas,
+		    ctx = tiles.renderCtx;
+		ctx.clearRect(0, 0, tiles.tileSize, tiles.tileSize);
+		
+		var heightMap = genHeightmap(tileX, tileY);
+		renderTile(heightMap, true, true);
+		imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+		resolve(imageData);
+	    });
+	    promise.then(function(value) {
+		tiles.tileMap[tileY][tileX] = {rendered: true,
+					       imageData: data};
+		tiles.rendering = false;
+	    });
+	}
+	return {rendered: false};
     }
+    return tiles.tileMap[tileY][tileX];
+}
+
+function update() {
+    tiles.ticks++;
 }
 
 function render() {
@@ -138,13 +142,18 @@ function render() {
         ctx = tiles.ctx;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-    for (i in tiles.tiles) {
-        tile = tiles.tiles[i];
-        if (tile.rendered) {
-            ctx.putImageData(tile.imageData,
-                             tile.tileX * tiles.tileSize,
-                             tile.tileY * tiles.tileSize
-                             );
+    var x, y;
+    for (y = 0; y < canvas.height - tiles.tileSize; y += tiles.tileSize) {
+	for (x = 0; x < canvas.width - tiles.tileSize; x += tiles.tileSize) {
+	    var tileX = ((x - tiles.offsetX) / tiles.tileSize) | 0,
+		tileY = ((y - tiles.offsetY) / tiles.tileSize) | 0;
+	    var tile = getTile(tileX, tileY);
+	    if (tile.rendered) {
+		ctx.putImageData(tile.imageData,
+				 tileX * tiles.tileSize + tiles.offsetX,
+				 tileY * tiles.tileSize + tiles.offsetY
+				);
+	    }
         }
     }
 
@@ -165,11 +174,6 @@ function start(canvasId) {
     tiles.renderCanvas.width = tiles.tileSize;
     tiles.renderCanvas.height = tiles.tileSize;
     tiles.renderCtx = tiles.renderCanvas.getContext("2d");
-
-    var x;
-    for (x = 0; x < 20; x++) {
-        tiles.tiles[x] = {rendered: false};
-    }
 
     requestAnimationFrame(loop);
 }
