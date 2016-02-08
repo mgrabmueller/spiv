@@ -20,27 +20,41 @@ var debug = false;
 
 var worldSeed = 46;
 
-var CHUNK_SIZE = 128;
+var CHUNK_SIZE = 128*2;
 
-var chunkMap = {};
+var chunkMap = [];
 var renderCanvas;
 var renderContext;
 var chunkCount = 0;
+var chunkGenCount = 0;
+var CHUNK_GEN_PER_FRAME = 3;
 
-function getChunk(x, y) {
+function getChunk(x, y, scaleIdx) {
     var chunkX = Math.floor(x / CHUNK_SIZE),
 	chunkY = Math.floor(y / CHUNK_SIZE);
-    if (!(chunkY in chunkMap)) {
-	chunkMap[chunkY] = {};
+    if (!(scaleIdx in chunkMap)) {
+	chunkMap[scaleIdx] = [];
     }
-    if (!(chunkX in chunkMap[chunkY])) {
+    if (!(chunkY in chunkMap[scaleIdx])) {
+	chunkMap[scaleIdx][chunkY] = [];
+    }
+    if ((!(chunkX in chunkMap[scaleIdx][chunkY]) || chunkMap[scaleIdx][chunkY][chunkX].dummy) && chunkGenCount < CHUNK_GEN_PER_FRAME) {
 	renderChunk(renderCanvas, renderContext, chunkX, chunkY, CHUNK_SIZE, scale);
-	chunkMap[chunkY][chunkX] = {imageData: renderContext.getImageData(0, 0, CHUNK_SIZE, CHUNK_SIZE),
-                                    chunkX: chunkX,
-                                    chunkY: chunkY};
+	chunkMap[scaleIdx][chunkY][chunkX] = {imageData: renderContext.getImageData(0, 0, CHUNK_SIZE, CHUNK_SIZE),
+					      scaleIdx: scaleIdx,
+					      chunkX: chunkX,
+					      chunkY: chunkY,
+					      dummy: false};
+	chunkGenCount++;
         chunkCount++;
     }
-    return chunkMap[chunkY][chunkX];
+    if (!(chunkX in chunkMap[scaleIdx][chunkY])) {
+	chunkMap[scaleIdx][chunkY][chunkX] = {scaleIdx: scaleIdx,
+					      chunkX: chunkX,
+					      chunkY: chunkY,
+					      dummy: true};
+    }
+    return chunkMap[scaleIdx][chunkY][chunkX];
 }
 
 // Blocks are multiples of BLOCK_SIZE (around the origin of the X/Y
@@ -406,20 +420,20 @@ function renderChunk(canvas, ctx, chunkX, chunkY, chunkSize, scale) {
     var startPos = screenToHexCoord((chunkX * chunkSize) / scale, (chunkY * chunkSize - hexA) / scale);
     var startCol = startPos[0],
 	startRow = startPos[1];
-    var endPos1 = screenToHexCoord(((chunkX+1) * chunkSize + hexWidth/2) / scale, (chunkY * chunkSize - hexA) / scale);
+    var endPos1 = screenToHexCoord(((chunkX+1) * chunkSize + hexWidth) / scale, (chunkY * chunkSize - hexA) / scale);
     var endCol = endPos1[0];
-    var endPos2 = screenToHexCoord(((chunkX+1) * chunkSize + hexWidth/2) / scale, ((chunkY+1)*chunkSize + hexA) / scale);
+    var endPos2 = screenToHexCoord(((chunkX+1) * chunkSize + hexWidth) / scale, ((chunkY+1)*chunkSize + hexA) / scale);
     var endRow = endPos2[1];
 
     var xskip = 0;
     var rowCnt = 0;
     var x, y;
-    for (y = startRow; y <= endRow; y++) {
+    for (y = startRow; y <= endRow+2; y++) {
 	if ((rowCnt & 1) == 1) {
 	    xskip += 1;
 	}
 	rowCnt++;
-        for (x = startCol - xskip; x <= endCol - xskip+2; x++) {
+        for (x = startCol - xskip; x <= endCol - xskip+3; x++) {
 	    renderCell(canvas, ctx, x, y, -1, -1);
 	}
     }
@@ -449,28 +463,24 @@ function update() {
     }
     if (KEY_PLUS in input.keyDown) {
 	if (scaleIndex < scaleTable.length-1) {
-	    offsetX = (offsetX - frameWidth/2)/ (scale*hexSize);
-	    offsetY = (offsetY - frameHeight/2)/ (scale*hexSize);
+	    // offsetX = (offsetX - frameWidth/2)/ (scale*hexSize);
+	    // offsetY = (offsetY - frameHeight/2)/ (scale*hexSize);
             scaleIndex++;
             scale = scaleTable[scaleIndex];
-	    offsetX = offsetX * (scale*hexSize) + frameWidth/2;
-	    offsetY = offsetY * (scale*hexSize) + frameHeight/2;
-            chunkMap = [];
-            chunkCount = 0;
+	    // offsetX = Math.floor(offsetX * (scale*hexSize)) + frameWidth/2;
+	    // offsetY = Math.floor(offsetY * (scale*hexSize)) + frameHeight/2;
 	    redraw = true;
 	}
     }
     if (KEY_MINUS in input.keyDown) {
 	if (scaleIndex > 0) {
-	    offsetX = (offsetX - frameWidth/2)/ (scale*hexSize);
-	    offsetY = (offsetY - frameHeight/2)/ (scale*hexSize);
+	    // offsetX = (offsetX - frameWidth/2)/ (scale*hexSize);
+	    // offsetY = (offsetY - frameHeight/2)/ (scale*hexSize);
 	    scale /= 1.11;
             scaleIndex--;
             scale = scaleTable[scaleIndex];
-	    offsetX = offsetX * (scale*hexSize) + frameWidth/2;
-	    offsetY = offsetY * (scale*hexSize) + frameHeight/2;
-            chunkMap = [];
-            chunkCount = 0;
+	    // offsetX = Math.floor(offsetX * (scale*hexSize)) + frameWidth/2;
+	    // offsetY = Math.floor(offsetY * (scale*hexSize)) + frameHeight/2;
 	    redraw = true;
 	}
     }
@@ -512,10 +522,12 @@ function render(canvas) {
     ctx.strokeStyle = 'black';
     for (y = 0; y < canvas.height + CHUNK_SIZE; y += CHUNK_SIZE) {
 	for (x = 0; x < canvas.width + CHUNK_SIZE; x += CHUNK_SIZE) {
-	    var chunk = getChunk(x - offsetX, y - offsetY);
-	    ctx.putImageData(chunk.imageData,
-                             chunk.chunkX * CHUNK_SIZE + offsetX,
-                             chunk.chunkY * CHUNK_SIZE + offsetY);
+	    var chunk = getChunk(x - offsetX, y - offsetY, scaleIndex);
+	    if (!chunk.dummy) {
+		ctx.putImageData(chunk.imageData,
+				 chunk.chunkX * CHUNK_SIZE + offsetX,
+				 chunk.chunkY * CHUNK_SIZE + offsetY);
+	    }
 	}
     }
 
@@ -532,9 +544,19 @@ function loop(canvas) {
     requestAnimationFrame(function() {loop(canvas)});
     update();
     if (redraw) {
+	chunkGenCount = 0;
 	render(canvas);
-	redraw = false;
+	if (chunkGenCount < CHUNK_GEN_PER_FRAME) {
+	    redraw = false;
+	}
     }
+}
+
+function toggleDebug() {
+    debug = !debug;
+    chunkMap = [];
+    chunkCount = 0;
+    redraw = true;
 }
 
 function start(canvasId) {
@@ -552,8 +574,8 @@ function start(canvasId) {
     offsetX = frameX;
     offsetY = frameY;
     function resize() {
-	canvas.width = window.innerWidth;
-	canvas.height = window.innerHeight - 6;
+//	canvas.width = window.innerWidth - 100;
+//	canvas.height = window.innerHeight - 6 - 40;
 	frameWidth = canvas.width - frameX*2;
 	frameHeight = canvas.height - frameY*2;
 	redraw = true;
@@ -580,10 +602,7 @@ function start(canvasId) {
 				delete input.keyDown[e.which];
 				switch (e.which) {
 				case 68:
-                                    debug = !debug;
-                                    chunkMap = [];
-                                    chunkCount = 0;
-                                    redraw = true;
+				    toggleDebug();
 				    break;
 				default:
 				    break

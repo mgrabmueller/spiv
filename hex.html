@@ -16,9 +16,18 @@
         margin: 0px;
         background: black;
       }
+      div#container {
+        padding: 0px;
+        margin: 0px;
+        display: inline-block;
+      }
       #main-canvas {
-      padding: 0px;
-      margin: 0px;
+        padding: 0px;
+        margin: 0px;
+        display: inline-block;
+      }
+      #controls {
+        display: inline-block;
       }
     </style>
 
@@ -29,12 +38,16 @@
   <body onload="start('main-canvas');">
     <div id="main-container">
       <div id="container">
-      <canvas id="main-canvas" width="800" height="600">
-        Your browser does not support the HTML5 Canvas feature. This
-        game uses new HTML5 features and will only work on the latest
-        versions of Firefox, Safari or Chrome (and maybe Internet
-        Explorer 9).
-      </canvas>
-     </div>
+        <canvas id="main-canvas" width="800" height="600">
+          Your browser does not support the HTML5 Canvas feature. This
+          game uses new HTML5 features and will only work on the latest
+          versions of Firefox, Safari or Chrome (and maybe Internet
+          Explorer 9).
+	</canvas>
+	<div id="contols">
+	  <button onclick="toggleDebug()">Debug</button>
+	</div>
+      </div>
+    </div>
   </body>
 </html>
