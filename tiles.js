@@ -4,11 +4,13 @@ var tiles = {
     ticks: 0,
     offsetX: 0,
     offsetY: 0,
-    tileSize: 64,
+    tileSize: 128,
     renderCanvas: null,
     renderCtx: null,
     tileMap: [],
-    rendering: false
+    rendering: false,
+    worker: null,
+    postedInFrame: 0
 };
 
 var colors =
@@ -42,57 +44,36 @@ function interpolateColor(value, x, y) {
     return [r, g, b];
 }
 
-function genHeightmap(tileX, tileY) {
-    var heightMap = [];
-    for (var ay = 0; ay < tiles.tileSize; ay++) {
-	for (var ax = 0; ax < tiles.tileSize; ax++) {
-            var x = tileX * tiles.tileSize + ax,
-                y = tileY * tiles.tileSize + ay;
-	    var sum = 0;
-
-	    var c = 4;
-	    while (c <= tiles.tileSize*2) {
-		sum += noise.simplex2(x/c, y/c);
-		sum /= 2;
-		c *= 2;
-	    }
-	    sum += 0.0;
-	    sum = Math.max(-1, Math.min(1, sum));
-	    heightMap[ay] = heightMap[ay] || [];
-	    heightMap[ay][ax] = sum;
-	}
-    }
-    return heightMap;
-}
-
 function renderTile(heightMap, doColor, lighting) {
     var ctx = tiles.renderCtx;
     var x, y;
     var shadowVal = 30;
+    var lift = 0.2
     for (y = 0; y < tiles.tileSize; y++) {
 	for (x = 0; x < tiles.tileSize; x++) {
-	    var gray = Math.floor(((heightMap[y][x] + 1) / 2) * 255);
-	    var color = doColor ? interpolateColor(heightMap[y][x], x, y) : [gray, gray, gray],
+            var height = heightMap[y][x] + lift;
+	    var gray = Math.floor(((height + 1) / 2) * 255);
+	    var color = doColor ? interpolateColor(height, x, y) : [gray, gray, gray],
 		r = color[0],
 		g = color[1],
 		b = color[2];
 
-	    if (lighting && heightMap[y][x] > 0.0 && x > 0) {
-		if (heightMap[y][x-1] > heightMap[y][x]) {
+	    if (lighting && height > 0.0 && x > 0) {
+		if (heightMap[y][x-1] + lift > height) {
 		    r = Math.max(0, r - shadowVal);
 		    g = Math.max(0, g - shadowVal);
 		    b = Math.max(0, b - shadowVal);
 		}
 	    }
-	    if (lighting && heightMap[y][x] > 0.0 && y > 0) {
-		if (heightMap[y-1][x] > heightMap[y][x]) {
+	    if (lighting && height > 0.0 && y > 0) {
+		if (heightMap[y-1][x] + lift > height) {
 		    r = Math.max(0, r - shadowVal);
 		    g = Math.max(0, g - shadowVal);
 		    b = Math.max(0, b - shadowVal);
 		}
 	    }
-	    if (lighting && heightMap[y][x] > 0.0 && x > 0 && y > 0) {
-		if (heightMap[y-1][x-1] > heightMap[y][x]) {
+	    if (lighting && height > 0.0 && x > 0 && y > 0) {
+		if (heightMap[y-1][x-1] + lift > height) {
 		    r = Math.max(0, r - shadowVal);
 		    g = Math.max(0, g - shadowVal);
 		    b = Math.max(0, b - shadowVal);
@@ -104,29 +85,35 @@ function renderTile(heightMap, doColor, lighting) {
     }
 }
 
+function getHeightMap(tileX, tileY, heightMap) {
+    var canvas = tiles.renderCanvas,
+	ctx = tiles.renderCtx;
+    ctx.clearRect(0, 0, tiles.tileSize, tiles.tileSize);
+
+    renderTile(heightMap, true, true);
+    imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    tiles.tileMap[tileY][tileX] = {rendered: true,
+				   imageData: imageData};
+}
+
+function receiveHeightMap(e) {
+    var data = e.data;
+    getHeightMap(data.tileX, data.tileY, data.heightMap);
+}
+
 function getTile(tileX, tileY) {
     tiles.tileMap[tileY] = tiles.tileMap[tileY] || [];
 
     if (!(tileX in tiles.tileMap[tileY])) {
-	if (!tiles.rendering) {
-	    tiles.rendering = true;
-	    var promise = new Promise(function(resolve, _reject) {
-		var canvas = tiles.renderCanvas,
-		    ctx = tiles.renderCtx;
-		ctx.clearRect(0, 0, tiles.tileSize, tiles.tileSize);
-		
-		var heightMap = genHeightmap(tileX, tileY);
-		renderTile(heightMap, true, true);
-		imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-		resolve(imageData);
-	    });
-	    promise.then(function(value) {
-		tiles.tileMap[tileY][tileX] = {rendered: true,
-					       imageData: data};
-		tiles.rendering = false;
-	    });
-	}
-	return {rendered: false};
+        if (tiles.postedInFrame < 1) {
+            tiles.postedInFrame++;
+            tiles.worker.postMessage({tileX: tileX,
+                                      tileY: tileY,
+                                      tileSize: tiles.tileSize});
+	    tiles.tileMap[tileY][tileX] = {rendered: false};
+        } else {
+            return {rendered: false};
+        }
     }
     return tiles.tileMap[tileY][tileX];
 }
@@ -142,9 +129,10 @@ function render() {
         ctx = tiles.ctx;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
 
+    tiles.postedInFrame = 0;
     var x, y;
-    for (y = 0; y < canvas.height - tiles.tileSize; y += tiles.tileSize) {
-	for (x = 0; x < canvas.width - tiles.tileSize; x += tiles.tileSize) {
+    for (y = 0; y < canvas.height - tiles.tileSize + 1; y += tiles.tileSize) {
+	for (x = 0; x < canvas.width - tiles.tileSize + 1; x += tiles.tileSize) {
 	    var tileX = ((x - tiles.offsetX) / tiles.tileSize) | 0,
 		tileY = ((y - tiles.offsetY) / tiles.tileSize) | 0;
 	    var tile = getTile(tileX, tileY);
@@ -167,7 +155,12 @@ function loop() {
 }
 
 function start(canvasId) {
+    tiles.worker = new Worker("heightmap-worker.js");
+    tiles.worker.onmessage = receiveHeightMap;
+
     tiles.canvas = document.getElementById(canvasId),
+    tiles.canvas.width = window.innerWidth;
+    tiles.canvas.height = window.innerHeight;
     tiles.ctx = tiles.canvas.getContext("2d");
 
     tiles.renderCanvas = document.createElement("canvas");
