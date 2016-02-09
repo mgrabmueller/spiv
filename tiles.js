@@ -90,7 +90,7 @@ function getHeightMap(tileX, tileY, heightMap) {
 	ctx = tiles.renderCtx;
     ctx.clearRect(0, 0, tiles.tileSize, tiles.tileSize);
 
-    renderTile(heightMap, true, true);
+    renderTile(heightMap, true, false);
     imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
     tiles.tileMap[tileY][tileX] = {rendered: true,
 				   imageData: imageData};
