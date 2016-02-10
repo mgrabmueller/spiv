@@ -9,110 +9,48 @@ var tiles = {
     renderCtx: null,
     tileMap: [],
     rendering: false,
-    worker: null,
-    postedInFrame: 0
+    workers: [],
+    workerQueue: 0,
+    postedInFrame: 0,
+    tileCount: 0,
+    tilesInProgress: 0,
+    keyDown: {},
+    redraw: true
 };
 
-var colors =
-    [
-	{low: -1.0000, r:   0, g:   0, b: 128},
-	{low: -0.2500, r:   0, g:   0, b: 255},
-	{low:  0.0000, r:   0, g: 128, b: 255},
-	{low:  0.0625, r: 240, g: 240, b:  64},
-	{low:  0.1250, r:  32, g: 160, b:   0},
-	{low:  0.3750, r: 224, g: 244, b:   0},
-	{low:  0.7500, r: 128, g: 128, b: 128},
-	{low:  0.8000, r: 240, g: 240, b: 240},
-	{low:  1.0000, r: 255, g: 255, b: 255},
-    ];
-
-function interpolateColor(value, x, y) {
-    var i;
-    var loIdx, hiIdx = colors.length - 1;
-    for (i in colors) {
-	if (value < colors[i].low) {
-	    hiIdx = i;
-	    break;
-	}
-	loIdx = i;
-    }
-    var t = ((value - colors[loIdx].low) / (colors[hiIdx].low - colors[loIdx].low))*4/5;
-    var r = Math.floor(t * (colors[hiIdx].r - colors[loIdx].r) + colors[loIdx].r),
-	g = Math.floor(t * (colors[hiIdx].g - colors[loIdx].g) + colors[loIdx].g),
-	b = Math.floor(t * (colors[hiIdx].b - colors[loIdx].b) + colors[loIdx].b);
-
-    return [r, g, b];
-}
-
-function renderTile(heightMap, doColor, lighting) {
-    var ctx = tiles.renderCtx;
-    var x, y;
-    var shadowVal = 30;
-    var lift = 0.2
-    for (y = 0; y < tiles.tileSize; y++) {
-	for (x = 0; x < tiles.tileSize; x++) {
-            var height = heightMap[y][x] + lift;
-	    var gray = Math.floor(((height + 1) / 2) * 255);
-	    var color = doColor ? interpolateColor(height, x, y) : [gray, gray, gray],
-		r = color[0],
-		g = color[1],
-		b = color[2];
-
-	    if (lighting && height > 0.0 && x > 0) {
-		if (heightMap[y][x-1] + lift > height) {
-		    r = Math.max(0, r - shadowVal);
-		    g = Math.max(0, g - shadowVal);
-		    b = Math.max(0, b - shadowVal);
-		}
-	    }
-	    if (lighting && height > 0.0 && y > 0) {
-		if (heightMap[y-1][x] + lift > height) {
-		    r = Math.max(0, r - shadowVal);
-		    g = Math.max(0, g - shadowVal);
-		    b = Math.max(0, b - shadowVal);
-		}
-	    }
-	    if (lighting && height > 0.0 && x > 0 && y > 0) {
-		if (heightMap[y-1][x-1] + lift > height) {
-		    r = Math.max(0, r - shadowVal);
-		    g = Math.max(0, g - shadowVal);
-		    b = Math.max(0, b - shadowVal);
-		}
-	    }
-	    ctx.strokeStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
-	    ctx.strokeRect(x, y, 1, 1);
-	}
-    }
-}
-
-function getHeightMap(tileX, tileY, heightMap) {
+function getHeightMap(tileX, tileY, buffer) {
     var canvas = tiles.renderCanvas,
 	ctx = tiles.renderCtx;
     ctx.clearRect(0, 0, tiles.tileSize, tiles.tileSize);
 
-    renderTile(heightMap, true, false);
-    imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    var imageData = ctx.createImageData(tiles.tileSize, tiles.tileSize);
+    imageData.data.set(buffer);
     tiles.tileMap[tileY][tileX] = {rendered: true,
 				   imageData: imageData};
+    tiles.tileCount++;
+    tiles.tilesInProgress--;
+    tiles.redraw = true;
 }
 
 function receiveHeightMap(e) {
     var data = e.data;
-    getHeightMap(data.tileX, data.tileY, data.heightMap);
+    getHeightMap(data.tileX, data.tileY, data.buffer);
 }
 
 function getTile(tileX, tileY) {
     tiles.tileMap[tileY] = tiles.tileMap[tileY] || [];
 
     if (!(tileX in tiles.tileMap[tileY])) {
-        if (tiles.postedInFrame < 1) {
+        if (tiles.tilesInProgress < 10) {
             tiles.postedInFrame++;
-            tiles.worker.postMessage({tileX: tileX,
-                                      tileY: tileY,
-                                      tileSize: tiles.tileSize});
-	    tiles.tileMap[tileY][tileX] = {rendered: false};
+            tiles.workers[tiles.workerQueue].postMessage({tileX: tileX,
+							  tileY: tileY,
+							  tileSize: tiles.tileSize});
+	    tiles.workerQueue = (tiles.workerQueue + 1) % tiles.workers.length;
+	    tiles.tilesInProgress++;
+	    tiles.tileMap[tileY][tileX] = {rendered: false, scheduled: true};
         } else {
-            return {rendered: false};
+            return {rendered: false, scheduled: false};
         }
     }
     return tiles.tileMap[tileY][tileX];
@@ -120,6 +58,25 @@ function getTile(tileX, tileY) {
 
 function update() {
     tiles.ticks++;
+    if (39 in tiles.keyDown) {
+	tiles.offsetX -= 10;
+	tiles.redraw = true;
+    }
+    if (37 in tiles.keyDown) {
+	tiles.offsetX += 10;
+	tiles.redraw = true;
+    }
+    if (40 in tiles.keyDown) {
+	tiles.offsetY -= 10;
+	tiles.redraw = true;
+    }
+    if (38 in tiles.keyDown) {
+	tiles.offsetY += 10;
+	tiles.redraw = true;
+    }
+    if (tiles.ticks % 60 == 0) {
+	tiles.redraw = true;
+    }
 }
 
 function render() {
@@ -128,39 +85,82 @@ function render() {
     var canvas = tiles.canvas,
         ctx = tiles.ctx;
     ctx.clearRect(0, 0, canvas.width, canvas.height);
-
     tiles.postedInFrame = 0;
     var x, y;
-    for (y = 0; y < canvas.height - tiles.tileSize + 1; y += tiles.tileSize) {
-	for (x = 0; x < canvas.width - tiles.tileSize + 1; x += tiles.tileSize) {
-	    var tileX = ((x - tiles.offsetX) / tiles.tileSize) | 0,
-		tileY = ((y - tiles.offsetY) / tiles.tileSize) | 0;
+    for (y = 0; y < canvas.height; y += tiles.tileSize) {
+	for (x = 0; x < canvas.width + tiles.tileSize-1; x += tiles.tileSize) {
+	    var tileX = Math.floor((x - tiles.offsetX) / tiles.tileSize),
+		tileY = Math.floor((y - tiles.offsetY) / tiles.tileSize);
 	    var tile = getTile(tileX, tileY);
 	    if (tile.rendered) {
 		ctx.putImageData(tile.imageData,
 				 tileX * tiles.tileSize + tiles.offsetX,
 				 tileY * tiles.tileSize + tiles.offsetY
 				);
+	    } else {
+		if (tile.scheduled) {
+		    ctx.fillStyle = "white";
+		} else {
+		    ctx.fillStyle = 'lightgray';
+		}
+		ctx.fillRect(tileX * tiles.tileSize + tiles.offsetX,
+			     tileY * tiles.tileSize + tiles.offsetY,
+			     tiles.tileSize,
+			     tiles.tileSize);
+		ctx.strokeRect(tileX * tiles.tileSize + tiles.offsetX,
+			     tileY * tiles.tileSize + tiles.offsetY,
+			     tiles.tileSize,
+			     tiles.tileSize);
+		ctx.beginPath();
+		ctx.moveTo(tileX * tiles.tileSize + tiles.offsetX,
+			   tileY * tiles.tileSize + tiles.offsetY);
+		ctx.lineTo(tileX * tiles.tileSize + tiles.offsetX + tiles.tileSize,
+			   tileY * tiles.tileSize + tiles.offsetY + tiles.tileSize);
+		ctx.moveTo(tileX * tiles.tileSize + tiles.offsetX,
+			   tileY * tiles.tileSize + tiles.offsetY + tiles.tileSize);
+		ctx.lineTo(tileX * tiles.tileSize + tiles.offsetX + tiles.tileSize,
+			   tileY * tiles.tileSize + tiles.offsetY);
+		ctx.stroke();
+			     
+			     
 	    }
         }
     }
 
     ctx.strokeText("Ticks: " + tiles.ticks, 10, 10);
+    ctx.strokeText("In progress: " + tiles.tilesInProgress, 10, 24);
+    ctx.strokeText("Tiles: " + tiles.tileCount + ' ( ' + ((tiles.tileCount * tiles.tileSize * tiles.tileSize * 4) / (1024*1024)) + ' MB)', 10, 38);
 }
 
 function loop() {
     requestAnimationFrame(loop);
     update();
-    render();
+    if (tiles.redraw) {
+	render();
+	tiles.redraw = false;
+    }
+}
+
+function keydownHandler(e) {
+    tiles.keyDown[e.which] = true;
+}
+
+function keyupHandler(e) {
+    console.log("up: ", e.which);
+    delete tiles.keyDown[e.which];
 }
 
 function start(canvasId) {
-    tiles.worker = new Worker("heightmap-worker.js");
-    tiles.worker.onmessage = receiveHeightMap;
+    var i;
+    for (i = 0; i < 2; i++) {
+	var worker = new Worker("heightmap-worker.js");
+	worker.onmessage = receiveHeightMap;
+	tiles.workers.push(worker);
+    }
 
     tiles.canvas = document.getElementById(canvasId),
     tiles.canvas.width = window.innerWidth;
-    tiles.canvas.height = window.innerHeight;
+    tiles.canvas.height = window.innerHeight-6;
     tiles.ctx = tiles.canvas.getContext("2d");
 
     tiles.renderCanvas = document.createElement("canvas");
@@ -168,5 +168,7 @@ function start(canvasId) {
     tiles.renderCanvas.height = tiles.tileSize;
     tiles.renderCtx = tiles.renderCanvas.getContext("2d");
 
+    document.addEventListener("keydown", keydownHandler);
+    document.addEventListener("keyup", keyupHandler);
     requestAnimationFrame(loop);
 }
