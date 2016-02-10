@@ -77,16 +77,16 @@ function renderTile(heightMap, tileSize, doColor, lighting) {
     return buffer;
 }
 
-function genHeightMap(tileX, tileY, tileSize) {
+function genHeightMap(tileX, tileY, tileSize, scale) {
     var heightMap = [];
     for (var ay = 0; ay < tileSize+1; ay++) {
 	for (var ax = 0; ax < tileSize+1; ax++) {
-            var x = tileX * tileSize + ax,
-                y = tileY * tileSize + ay;
+            var x = (tileX * tileSize + ax)/scale,
+                y = (tileY * tileSize + ay)/scale;
 	    var sum = 0;
 
-	    var c = 4;
-	    while (c <= tileSize*4) {
+	    var c = 2;
+	    while (c <= 512) {
 		sum += noise.simplex2(x/c, y/c);
 		sum /= 2;
 		c *= 2;
@@ -102,7 +102,7 @@ function genHeightMap(tileX, tileY, tileSize) {
 
 onmessage = function(e) {
     var data = e.data;
-    var heightMap = genHeightMap(data.tileX, data.tileY, data.tileSize);
-    var buffer = renderTile(heightMap, data.tileSize, true, true);
-    postMessage({tileX: data.tileX, tileY: data.tileY, buffer: buffer})
+    var heightMap = genHeightMap(data.tileX, data.tileY, data.tileSize, data.scale);
+    var buffer = renderTile(heightMap, data.tileSize, data.color, data.lighting);
+    postMessage({tileX: data.tileX, tileY: data.tileY, scaleIndex: data.scaleIndex, buffer: buffer, color: data.color, lighting: data.lighting})
 }
